@@ -1,0 +1,23 @@
+{
+  "name": "Rank Rank — CMA Final Law",
+  "short_name": "Rank Rank",
+  "description": "Daily MCQ, case, written-answer and key-value practice for CMA Final Paper 13 (Corporate & Economic Laws).",
+  "id": "./",
+  "start_url": "./index.html#today",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1C1660",
+  "theme_color": "#4B3BDB",
+  "categories": ["education", "productivity"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Today's routine", "url": "./index.html#today" },
+    { "name": "Cheat sheet", "url": "./index.html#cheat" },
+    { "name": "Practice", "url": "./index.html#practice" }
+  ]
+}
