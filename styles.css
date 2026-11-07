@@ -492,3 +492,13 @@ em.upd{font-style:normal;font-size:11px;font-weight:700;color:var(--green);backg
 .pdfres{max-height:30vh;overflow:auto;border-radius:0!important}
 .tabbar .tab span{white-space:nowrap}
 @media (max-width:360px){.tab{font-size:9.5px}}
+/* v4 */
+.backpill{display:inline-flex;align-items:center;gap:4px;height:36px;padding:0 14px 0 8px;border-radius:999px;background:var(--fill);color:var(--blue);font-weight:600;font-size:15px}
+.backpill svg{width:18px;height:18px}
+.bkcard{display:flex;gap:12px;align-items:flex-start;text-align:left;width:100%;margin-bottom:14px;border:1.5px solid color-mix(in srgb,var(--orange) 35%,transparent)}
+.bkcard>svg{width:26px;height:26px;color:var(--orange);flex:0 0 26px;margin-top:2px}
+.bkcard b{display:block;font-size:16px}
+.bkcard span{font-size:14px;color:var(--label2)}
+.hlrow p{margin:0;font-family:var(--serif);font-size:16px;line-height:1.5;background:linear-gradient(transparent 55%,var(--mark) 55%);display:inline}
+.hlrow .vtools{margin-top:8px}
+#cmode button{padding:7px 8px;font-size:13.5px}

@@ -88,6 +88,7 @@ const DEFAULT = { settings: { name: '', goals: { mcq: 20, case: 5, desc: 3 }, t:
 let S;
 try { S = Object.assign(structuredClone(DEFAULT), JSON.parse(localStorage.getItem(KEY) || localStorage.getItem('clauseclause.v1') || '{}')); S.settings = Object.assign(structuredClone(DEFAULT.settings), S.settings || {}); S.settings.goals = Object.assign({}, DEFAULT.settings.goals, S.settings.goals); S.settings.t = Object.assign({}, DEFAULT.settings.t, S.settings.t); }
 catch (e) { S = structuredClone(DEFAULT); }
+const saveNow = () => { clearTimeout(saveT); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} try { PDFStore.put('S', JSON.stringify(S), 'meta'); } catch (e) {} };
 let saveT, metaT; const save = () => { clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('Storage is full — export your progress in Settings'); } }, 120); clearTimeout(metaT); metaT = setTimeout(() => { try { Remind.syncMeta(); } catch (e) {} }, 3000); };
 const day = (k = todayKey()) => (S.days[k] ||= { mcq: 0, case: 0, desc: 0, xp: 0, secs: 0, ok: 0, n: 0 });
 function applyTheme() { const t = S.settings.theme; if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t); }
@@ -241,10 +242,9 @@ function buildQueue(o) {
   if (fmt === 'recall') pool = pool.filter(i => recallable(i) || i.k === 'cloze');
   if (o.pyq) pool = pool.filter(i => i.tags.some(t => /PYQ|IMP|MQP|20\d\d/.test(t)));
   const now = Date.now();
-  const score = it => { const s = S.stats[it.id]; let v = Math.random() * 1.5; if (!s) v += 1.6; else { if (s.due <= now) v += 3; if (s.w && s.box <= 2) v += 2; if (s.box >= 4) v -= 2; } if (S.marked[it.id]) v += 2.5; if (it.tags.some(t => /PYQ|IMP/.test(t))) v += .6; return v; };
+  const score = it => { const s = S.stats[it.id]; let v = Math.random() * 1.5; if (!s) v += 1.6; else { if (s.due <= now) v += 3; if (s.w && s.box <= 2) v += 2; if (s.box >= 4) v -= 2; } if (it.tags.some(t => /PYQ|IMP/.test(t))) v += .6; return v; };
   pool = pool.map(it => [score(it), it]).sort((a, b) => b[0] - a[0]).map(x => x[1]);
   let out = pool.slice(0, o.count || 15);
-  if (o.marked && !o.ids) { const mk = Object.keys(S.marked).map(id => BYID[id]).filter(it => it && !out.includes(it)).slice(0, Math.ceil((o.count || 15) / 3)); out = out.slice(0, Math.max(0, out.length - mk.length)).concat(mk); }
   out = shuffle(out);
   return out.map(it => ({ id: it.id, mode: it.k === 'desc' ? 'desc' : fmt === 'recall' ? 'recall' : (fmt === 'mix' && recallable(it) && Math.random() < .2 ? 'recall' : 'mcq') }));
 }
@@ -253,7 +253,7 @@ function routineQueue() {
   const need = { mcq: Math.max(g.mcq - d.mcq, 0), case: Math.max(g.case - d.case, 0), desc: Math.max(g.desc - d.desc, 0) };
   const extra = !need.mcq && !need.case && !need.desc;
   if (extra) { need.mcq = 10; need.case = 3; need.desc = 2; }
-  const a = buildQueue({ sel, fmt: 'mcq', count: Math.min(need.mcq, 30), marked: S.settings.marked });
+  const a = buildQueue({ sel, fmt: 'mcq', count: Math.min(need.mcq, 30) });
   const ids = new Set(a.map(x => x.id));
   const b = buildQueue({ sel, fmt: 'case', count: need.case + 4 }).filter(x => !ids.has(x.id)).slice(0, need.case); b.forEach(x => ids.add(x.id));
   const c = buildQueue({ sel, fmt: 'desc', count: need.desc + 4 }).filter(x => !ids.has(x.id) && !BYID[x.id].sc).slice(0, need.desc);
@@ -360,7 +360,7 @@ function pageToday(main) {
       <div class="lg"><span class="k" style="color:var(--ring3)">Written</span><span class="v">${d.desc}<small>/${g.desc}</small></span></div></div></div>
     <div style="display:flex;gap:8px;align-items:center;margin:14px 2px 0;flex-wrap:wrap"><span class="streak">${I.flame} ${st ? st + '-day streak' : 'Start a streak today'}</span><span class="chip blue">Level ${lv.n} · ${lv.title}</span><span class="chip">${S.xp} XP</span></div>
     <button class="btn primary block" id="routine" style="margin-top:16px;min-height:56px;font-size:18px">${I.play} ${pct >= 100 ? 'Do a bonus round' : d.n ? 'Continue today’s routine' : 'Start today’s routine'}</button>
-    <p class="foot">${selected() ? 'Built from the topics you picked in Practice.' : 'Built from all chapters — pick the units you have studied in Practice to focus it.'} Revisions that are due and your starred questions come first.</p>
+    <p class="foot">${selected() ? 'Built from the topics you picked in Practice.' : 'Built from all chapters — pick the units you have studied in Practice to focus it.'} Revisions that are due come first. Starred questions stay in their own list.</p>
     <h2 class="section-h">Summary</h2>
     <div class="hgrid">
       <button class="hcard" data-h="q"><div class="hc-h" style="color:var(--pink)">${I.practice}<span>Questions</span><em>Today</em></div><div class="hc-v">${d.n}<small> answered</small></div></button>
@@ -393,6 +393,7 @@ function pageToday(main) {
     </div></div>`);
   main.append(p); animateRings(p);
   const rc = resumeCard(); if (rc) $('#resume', p).append(rc);
+  Backup.banner().then(c => c && $('#resume', p).append(c));
   // second highlight: accuracy or chapter insight
   const cs = chapterStats().filter(c => c.acc != null && c.att >= 3); const best = cs.slice().sort((a, b) => b.acc - a.acc)[0], worst = cs.slice().sort((a, b) => a.acc - b.acc)[0];
   if (w.acc != null) {
@@ -425,7 +426,7 @@ function pagePractice(main) {
     <div class="group-h">Session</div>
     <div class="list">
       <div class="row plain"><div class="tx"><div class="t1">Questions</div></div><div class="stepper"><button data-s="-" aria-label="Fewer">${I.minus}</button><b id="cnt">${st.count}</b><button data-s="+" aria-label="More">${I.plus}</button></div></div>
-      <label class="row plain"><div class="tx"><div class="t1">Include my marked questions</div></div><span class="switch"><input type="checkbox" id="mk" ${st.marked ? 'checked' : ''}><span></span></span></label>
+      <label class="row plain"><div class="tx"><div class="t1">Starred questions only</div><div class="t2">${Object.keys(S.marked).filter(id => BYID[id]).length} starred — practise all of them, ignoring the topic picks</div></div><span class="switch"><input type="checkbox" id="mk" ${st.starOnly ? 'checked' : ''}><span></span></span></label>
       <label class="row plain"><div class="tx"><div class="t1">Only past-paper & IMP questions</div></div><span class="switch"><input type="checkbox" id="pyq" ${st.pyq ? 'checked' : ''}><span></span></span></label>
       <label class="row plain"><div class="tx"><div class="t1">Exam timer</div><div class="t2">MCQ ${st.t.mcq}s · written ${(st.t.perMark / 60).toFixed(1)} min per mark</div></div><span class="switch"><input type="checkbox" id="tm" ${st.timer ? 'checked' : ''}><span></span></span></label>
     </div>
@@ -471,20 +472,20 @@ function pagePractice(main) {
     });
     return d;
   }
-  function avail() { const s = Object.keys(sel).length ? sel : null; const q = buildQueue({ sel: s, fmt: st.fmt, count: 9999, pyq: $('#pyq', p).checked }); $('#avail', p).textContent = (s ? q.length + ' questions match your picks.' : 'Nothing picked — practice will draw from all ' + q.length + ' matching questions.'); }
+  function avail() { if (st.starOnly) { $('#avail', p).textContent = 'Starred only is on — all ' + Object.keys(S.marked).filter(id => BYID[id]).length + ' starred questions will come, whatever topics are picked.'; return; } const s = Object.keys(sel).length ? sel : null; const q = buildQueue({ sel: s, fmt: st.fmt, count: 9999, pyq: $('#pyq', p).checked }); $('#avail', p).textContent = (s ? q.length + ' questions match your picks.' : 'Nothing picked — practice will draw from all ' + q.length + ' matching questions.'); }
   $$('[data-s]', p).forEach(b => b.onclick = () => { st.count = Math.max(5, Math.min(60, st.count + (b.dataset.s === '+' ? 5 : -5))); $('#cnt', p).textContent = st.count; save(); });
-  $('#mk', p).onchange = e => { st.marked = e.target.checked; save(); };
+  $('#mk', p).onchange = e => { st.starOnly = e.target.checked; save(); avail(); };
   $('#pyq', p).onchange = e => { st.pyq = e.target.checked; save(); avail(); };
   $('#tm', p).onchange = e => { st.timer = e.target.checked; save(); };
   $('#save', p).onclick = () => { st.sel = Object.keys(sel).length ? structuredClone(sel) : null; save(); toast(st.sel ? 'Daily routine will use these topics' : 'Daily routine will use all chapters'); };
-  $('#go', p).onclick = () => { const s = Object.keys(sel).length ? sel : null; const q = buildQueue({ sel: s, fmt: st.fmt, count: st.count, marked: st.marked, pyq: st.pyq }); if (!q.length) return toast('No questions match — widen your picks'); Session.start(q, 'Practice'); };
+  $('#go', p).onclick = () => { if (st.starOnly) { const ids = Object.keys(S.marked).filter(id => BYID[id]); if (!ids.length) return toast('Nothing starred yet — tap ☆ on any question'); let q = buildQueue({ ids, fmt: st.fmt, count: ids.length }); if (!q.length) q = buildQueue({ ids, fmt: 'mix', count: ids.length }); return Session.start(q, 'Starred questions'); } const s = Object.keys(sel).length ? sel : null; const q = buildQueue({ sel: s, fmt: st.fmt, count: st.count, pyq: st.pyq }); if (!q.length) return toast('No questions match — widen your picks'); Session.start(q, 'Practice'); };
   draw();
 }
 
 function pageStudy(main) {
   const p = h(`<div class="page"><header class="navbar"><div><p class="eyebrow">Open the real PDFs at the right page</p><h1 class="largetitle">Study</h1></div></header>
     <div id="cont"></div>
-    <div class="group-h">Your course material</div><div class="list" id="files"></div>
+    <div id="files"></div>
     <div class="group-h" style="display:flex;justify-content:space-between"><span>My PDFs</span></div><div class="list" id="mine"></div>
     <label class="btn tinted block" style="margin-top:12px">${I.upload} Upload a PDF<input type="file" accept="application/pdf" multiple class="sr" id="addpdf"></label>
     <p class="foot">Upload any PDF — notes, ICMAI material, RTPs. Rank Rank reads it and builds practice: MCQs (when the PDF has an answer key), written Q&A pairs and key-value recall, all linked to their page. It stays private in this browser.</p>
@@ -493,10 +494,10 @@ function pageStudy(main) {
   const lr = S.lastRead; if (lr && PDFStore.meta(lr.key)) { const m = PDFStore.meta(lr.key); const c = h(`<button class="card resume" type="button" style="width:100%;text-align:left"><div class="hc-h" style="color:var(--blue)">${I.book}<span>Continue reading</span><em>${new Date(lr.at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</em></div><div class="resume-t"><b>${esc(m.name)}</b><span>Page ${lr.page}</span></div></button>`); c.onclick = () => Viewer.open(lr.key, lr.page); $('#cont', p).append(c); }
   const files = $('#files', p);
   const desc = { CB: 'Concepts for every unit, section by section', MCQ: '359 MCQs with answer keys', QA234: 'Written answers · Dividends, Accounts, Audit', QA567: 'Written answers · Board, Meetings, KMP', IMP: 'Important questions for June 2026', PAPER: 'Actual June 2026 question paper', BUL: 'Same MCQs, June 2026 edition', PLAN: 'Dec 26 revision planner and weightage' };
-  const colors = { CB: 'blue', MCQ: 'pink', QA234: 'green', QA567: 'teal', IMP: 'orange', PAPER: 'purple', BUL: 'indigo', PLAN: 'yellow' };
+  const colors = new Proxy({ CB: 'blue', MCQ: 'pink', QA234: 'green', QA567: 'teal', IMP: 'orange', PAPER: 'purple', BUL: 'indigo', PLAN: 'yellow', MQP: 'purple', MRG: 'green' }, { get: (o, k) => o[k] || (String(k).startsWith('D') ? 'orange' : /C$|CA13|FEMAN|PMC|CYC/.test(k) ? 'blue' : /CH$|ACC|AUD|DIV/.test(k) ? 'yellow' : 'teal') });
   Object.entries(B.files).forEach(([k, f]) => {
     const r = h(`<button class="row tap" type="button">${tint(colors[k], I.doc)}<div class="tx"><div class="t1">${esc(f.name)}</div><div class="t2">${esc(desc[k] || f.file)}${S.lastPage?.[k] ? ' · p.' + S.lastPage[k] : ''}</div></div><span class="val" data-st="${k}"></span>${I.chev}</button>`);
-    r.onclick = () => Viewer.open(k); files.append(r);
+    r.onclick = () => Viewer.open(k); const g = f.g || 'Your course material'; let box = files.querySelector(`[data-g="${g}"]`); if (!box) { files.append(h(`<div class="group-h">${esc(g)}</div>`)); box = h(`<div class="list" data-g="${esc(g)}"></div>`); files.append(box); } box.append(r);
     PDFStore.status(k).then(s => { const el = $(`[data-st="${k}"]`, p); if (el) el.textContent = s === 'none' ? 'Add' : ''; });
   });
   const mine = $('#mine', p); const ups = S.userPdfs || [];
@@ -611,11 +612,20 @@ function showSettings() {
     <div class="row plain"><div class="tx"><div class="t1">Appearance</div></div><div class="seg" id="thm" style="width:200px">${['auto', 'light', 'dark'].map(x => `<button aria-pressed="${st.theme === x}" data-t="${x}">${x[0].toUpperCase() + x.slice(1)}</button>`).join('')}</div></div></div>`); b.append(r);
   $('#kw', r).onchange = e => { st.kw = e.target.checked; save(); }; $('#gl', r).onchange = e => { st.gl = e.target.checked; save(); };
   $$('#thm button', r).forEach(x => x.onclick = () => { st.theme = x.dataset.t; $$('#thm button', r).forEach(y => y.setAttribute('aria-pressed', y === x)); applyTheme(); save(); });
-  b.append(h(`<div class="group-h" style="margin-left:4px">Your data</div>`));
-  const dd = h(`<div class="list"><button class="row tap plain"><div class="tx"><div class="t1" style="color:var(--blue)">Export progress</div><div class="t2">Move to another device</div></div></button><label class="row tap plain"><div class="tx"><div class="t1" style="color:var(--blue)">Import progress</div></div><input type="file" accept="application/json" class="sr"></label><button class="row tap plain"><div class="tx"><div class="t1" style="color:var(--red)">Reset all progress</div></div></button></div>`); b.append(dd);
-  dd.children[0].onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(S)], { type: 'application/json' })); a.download = 'rank-rank-progress.json'; a.click(); };
-  $('input', dd).onchange = async e => { try { const j = JSON.parse(await e.target.files[0].text()); if (!j.stats) throw 0; S = Object.assign(structuredClone(DEFAULT), j); save(); toast('Progress imported'); closeModal(); route(); } catch (x) { toast('That file is not a Rank Rank export'); } };
-  dd.children[2].onclick = () => { if (confirm('Erase all answers, marks, highlights and XP on this device?')) { const keep = S.settings; S = structuredClone(DEFAULT); S.settings = keep; save(); toast('Progress reset'); closeModal(); route(); } };
+  b.append(h(`<div class="group-h" style="margin-left:4px">Backup & restore</div>`));
+  const bk = S.bk || {}; const fold = Backup.can();
+  const dd = h(`<div class="list">
+    ${fold ? `<button class="row tap plain" data-b="choose"><div class="tx"><div class="t1" style="color:var(--blue)">${bk.folder ? 'Backup folder: ' + esc(bk.folder) : 'Choose a backup folder on this device'}</div><div class="t2">${bk.folder ? 'Change folder' : 'Saves one up-to-date backup file there automatically'}</div></div>${I.chev}</button>` : `<div class="row plain"><div class="tx"><div class="t2">This browser can’t write to a folder automatically (Safari/iPhone). Use “Download backup file” — the app reminds you when one is due.</div></div></div>`}
+    <div class="row plain"><div class="tx"><div class="t1">Last backup</div></div><span class="val">${bk.at ? new Date(bk.at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : bk.dl ? 'Downloaded ' + new Date(bk.dl).toLocaleDateString() : 'Never'}</span></div>
+    ${fold && bk.folder ? `<button class="row tap plain" data-b="now"><div class="tx"><div class="t1" style="color:var(--blue)">Back up now</div></div></button>` : ''}
+    <button class="row tap plain" data-b="dl"><div class="tx"><div class="t1" style="color:var(--blue)">Download backup file</div><div class="t2">Progress, stars, highlights, settings and your uploaded-PDF practice</div></div></button>
+    <label class="row tap plain"><div class="tx"><div class="t1" style="color:var(--blue)">Restore from a backup file</div><div class="t2">Also accepts older “progress” exports</div></div><input type="file" accept="application/json,.json" class="sr"></label>
+    <button class="row tap plain" data-b="reset"><div class="tx"><div class="t1" style="color:var(--red)">Reset all progress</div></div></button></div>`); b.append(dd);
+  dd.querySelector('[data-b=choose]')?.addEventListener('click', async () => { if (await Backup.choose()) { closeModal(); setTimeout(showSettings, 400); } });
+  dd.querySelector('[data-b=now]')?.addEventListener('click', async () => { if ((await Backup.perm(true)) !== 'granted') return toast('Allow folder access to back up'); await Backup.run('manual', true); toast('Backed up to “' + (S.bk?.folder || 'folder') + '”'); closeModal(); setTimeout(showSettings, 400); });
+  dd.querySelector('[data-b=dl]').onclick = () => { Backup.download(); toast('Backup file downloaded'); };
+  $('input', dd).onchange = async e => { const f = e.target.files[0]; if (!f) return; try { await Backup.restore(f); } catch (x) { toast('That file isn’t a Rank Rank backup'); } };
+  dd.querySelector('[data-b=reset]').onclick = () => { if (confirm('Erase all answers, stars, highlights and XP on this device? Download a backup first if unsure.')) { const keep = S.settings; S = structuredClone(DEFAULT); S.settings = keep; saveNow(); toast('Progress reset'); closeModal(); route(); } };
   b.append(h(`<p class="foot" style="margin-top:14px">Question bank ${esc(B.version)} · ${ITEMS.length} questions. Content comes from your uploaded material; corrections are marked and linked to their source.</p>`));
 }
 
@@ -675,7 +685,12 @@ const Session = {
   persist() { if (!this.q || this.i >= this.q.length) return; S.active = { q: this.q, n0: this.n0, i: this.i, title: this.title, xp: this.xp, at: Date.now(), spent: Math.round((Date.now() - this.t0) / 1000) }; save(); },
   get res() { return this.q.filter(x => x.done).map(x => ({ id: x.id, ok: x.done.ok, secs: x.done.secs })); },
   starUI() { const on = !!S.marked[this.cur?.id]; const b = $('#sstar'); if (!b) return; b.innerHTML = on ? I.starf : I.star; b.style.color = on ? 'var(--yellow)' : 'var(--blue)'; },
-  close() {
+  close(force) {
+    if (!force && this.q && this.i < this.q.length) {
+      const b = openModal('Leave this test?', `<p style="margin-top:0;font-size:17px">Your place and answers are saved. You can continue from Today anytime.</p>`);
+      const row = h(`<div class="btnrow" style="margin-top:8px"><button class="btn gray"><span>Save & leave</span></button><button class="btn primary"><span>Keep practising</span></button></div>`);
+      row.children[1].onclick = () => { closeModal(); this.clock?.resume(); }; row.children[0].onclick = () => { closeModal(); this.close(true); }; b.append(row); this.clock?.pause(); return;
+    }
     this.clock?.stop(); this.cleanup?.(); this.cleanup = null; hidePill();
     if (this.q && this.i < this.q.length) { this.persist(); toast('Saved — continue from Today anytime'); }
     this.el.classList.remove('open'); if (!$('#viewer').classList.contains('open')) document.body.style.overflow = ''; route();
@@ -833,6 +848,8 @@ const Session = {
     head.append(this.sourceChip(it.src.f, it.src.p, it.src.f === 'PAPER' ? 'June 2026 paper' : null, flashOf(Array.isArray(it.q) ? it.q[0] : it.q))); p.append(head);
     if (it.plan) { p.append(h(`<div class="chips" style="margin-bottom:8px"><span class="chip purple">${I.ai} AI-structured from your Concept Book — verify</span></div>`)); p.append(richParas([it.plan], it.id)); }
     else p.append(richParas(it.ans, it.id));
+    if (it.also?.length) { const al = h(`<div class="chips" style="margin-top:12px"><span class="chip">Also in:</span></div>`); it.also.forEach(a => B.files[a.f] && al.append(this.sourceChip(a.f, a.p, B.files[a.f].name))); p.append(al); }
+    if (it.prev) p.append(h(`<p class="hint" style="margin-top:10px">Answer shown from the latest merged Q&A (May 2026).</p>`));
     wrap.append(p);
     if (it.secs) it.secs.forEach(sc => { const sp = h('<div class="panel"></div>'); const hh = h(`<div class="panel-h"><h3>Concept ${sc.n} · ${esc(sc.t)}</h3></div>`); hh.append(this.sourceChip('CB', sc.p, 'Concept Book', sc.paras[0])); sp.append(hh, richParas(sc.paras, it.id)); wrap.append(sp); });
     const kws = keywordsOf((it.ans || []).join(' ') + ' ' + (it.plan || '') + ' ' + (it.secs || []).map(s => s.paras.join(' ')).join(' '));
@@ -901,7 +918,7 @@ const Session = {
     this.clock?.stop(); this.cleanup?.(); $('#stimer').innerHTML = ''; S.active = null;
     const res = this.res; const n = res.length, ok = res.filter(r => r.ok).length, pct = n ? Math.round(ok / n * 100) : 0, secs = Math.round((Date.now() - this.t0) / 1000);
     const skipped = [...new Set(this.q.filter(x => x.skipped && !this.q.some(y => y.id === x.id && y.done)).map(x => x.id))];
-    if (n) { S.sessions.push({ title: this.title, at: Date.now(), n, ok, pct, secs }); S.sessions = S.sessions.slice(-60); } save(); checkAwards();
+    if (n) { S.sessions.push({ title: this.title, at: Date.now(), n, ok, pct, secs }); S.sessions = S.sessions.slice(-60); } saveNow(); checkAwards(); Backup.maybe('finish');
     $('#sprog').style.width = '100%'; $('#st2').textContent = 'Session complete'; $('#sback').disabled = true; $('#sback').style.opacity = .35;
     const body = $('#sbody'); body.innerHTML = ''; const C = 2 * Math.PI * 75; const col = pct >= 70 ? 'var(--green)' : pct >= 50 ? 'var(--orange)' : 'var(--red)';
     const nm = S.settings.name ? ', ' + S.settings.name : '';
@@ -919,7 +936,7 @@ const Session = {
     const wrong = [...new Set(res.filter(r => !r.ok).map(r => r.id))];
     const acts = this.actions([this.btn('Summarise', 'gray', () => showSummary(), I.sum)]);
     if (wrong.length) acts.append(this.btn('Practise mistakes', 'primary', () => this.start(wrong.map(id => ({ id, mode: BYID[id].k === 'desc' ? 'desc' : 'mcq' })), 'My mistakes'), I.retry));
-    else acts.append(this.btn('Done', 'primary', () => this.close(), I.check));
+    else acts.append(this.btn('Done', 'primary', () => this.close(true), I.check));
     this.i = this.q.length;
   }
 };
@@ -1056,6 +1073,7 @@ const Viewer = {
       <div class="vsearch">${I.search}<input type="search" id="vq" placeholder="Search this PDF" value="${esc(this.q)}" aria-label="Search this PDF" enterkeyhint="search"></div></div>
       <div class="list pdfres hidden" id="vres"></div><div class="vwrap"><div class="pdfstage" id="vstage"><div class="spinner" aria-label="Loading"></div></div><aside class="vnotes hidden" id="vnotes" aria-label="Notes for this page"></aside></div>`;
     this.el.classList.add('open'); document.body.style.overflow = 'hidden';
+    if (Session.el.classList.contains('open')) { const vx = $('#vx'); vx.className = 'backpill'; vx.innerHTML = I.prev + '<span>Back to question</span>'; vx.setAttribute('aria-label', 'Back to question'); }
     $('#vx').onclick = () => this.close(); $('#vp').onclick = () => this.go(this.page - 1); $('#vn').onclick = () => this.go(this.page + 1);
     $('#vpg').onchange = e => this.go(+e.target.value);
     $('#vzi').onclick = () => this.setZoom(this.zoom + .25); $('#vzo').onclick = () => this.setZoom(this.zoom - .25);
@@ -1232,7 +1250,7 @@ const Cheat = {
 const cnoteFor = (ch, cn) => { const r = (B.cnotes || []).filter(x => x.ch === ch && x.cn === cn).map(x => ({ kind: x.kind, text: x.text, links: [{ t: 'Check the source', u: x.u }] })); return r.length ? r : undefined; };
 async function pageCheat(main) {
   const p = h(`<div class="page"><header class="navbar"><div><p class="eyebrow">Unit-wise, straight from your Concept Book</p><h1 class="largetitle">Cheat sheet</h1></div></header>
-    <div class="seg" id="cmode">${[['values', 'Key values'], ['confuse', 'Often confused'], ['tricks', 'Memory tricks']].map(([k, t]) => `<button aria-pressed="${(S.settings.cmode || 'values') === k}" data-m="${k}">${t}</button>`).join('')}</div>
+    <div class="seg" id="cmode">${[['values', 'Key values'], ['hl', 'Highlighted'], ['confuse', 'Confused'], ['tricks', 'Tricks']].map(([k, t]) => `<button aria-pressed="${(S.settings.cmode || 'values') === k}" data-m="${k}">${t}</button>`).join('')}</div>
     <div class="chipscroll" id="cch"></div><div id="cbody"><div class="spinner"></div></div></div>`);
   main.append(p);
   try { await Cheat.load(); } catch (e) { $('#cbody', p).innerHTML = `<div class="empty">Couldn’t load the cheat sheet. Check your connection and reopen this tab.</div>`; return; }
@@ -1270,6 +1288,13 @@ async function pageCheat(main) {
         const qz = h(`<button class="chip purple" type="button">Quiz me</button>`); qz.onclick = () => quizPair(x); $('.chips', card).append(qz); body.append(card); });
       const all = Cheat.data.confuse; const qa = h(`<button class="btn tinted block" style="margin-top:14px">${I.play}<span>Quiz me on all ${all.length} confused pairs</span></button>`); qa.onclick = () => quizPair(null); body.append(qa);
     }
+    if (mode === 'hl') {
+      const list = (Cheat.data.hl || []).filter(x => x.ch === cur);
+      if (!list.length) body.append(h(`<div class="card empty">No highlights in your Concept Book for this chapter. Highlighted chapters: Audit, IBC, Governance, SEBI, MSME, FEMA.</div>`));
+      else { const g = h(`<div class="vgroup"><div class="vg-h"><b>Highlighted in your Concept Book</b><span class="chip">${list.length}</span></div></div>`);
+        list.forEach(x => { const row = h(`<div class="vrow hlrow"><p>${esc(x.t)}</p><div class="vtools"><button class="chip" type="button">${I.doc.replace('<svg', '<svg width="12" height="12"')} p.${x.p}</button><button class="chip" type="button">${I.copy.replace('<svg', '<svg width="12" height="12"')} Copy</button></div></div>`); row.querySelectorAll('.chip')[0].onclick = () => Viewer.open('CB', x.p, { flash: x.t }); row.querySelectorAll('.chip')[1].onclick = () => navigator.clipboard?.writeText(x.t + ' (p.' + x.p + ')').then(() => toast('Copied')); g.append(row); });
+        body.append(g); }
+    }
     if (mode === 'tricks') {
       const list = B.tricks.filter(t => t.ch === cur);
       if (!list.length) body.append(h(`<div class="card empty">No memory tricks for this chapter yet.</div>`));
@@ -1285,6 +1310,46 @@ function quizPair(x) {
   const ids = list.map(c => ({ id: 'K-' + Cheat.data.confuse.indexOf(c), mode: 'desc' }));
   Session.start(ids, x ? 'Often confused' : 'All confused pairs');
 }
+/* ---------- Backups: never lose data ---------- */
+const Backup = {
+  can: () => 'showDirectoryPicker' in window && window.isSecureContext,
+  async dir() { if (this._dir === undefined) this._dir = await PDFStore.get('backupDir', 'meta'); return this._dir; },
+  async perm(ask) { const d = await this.dir(); if (!d || !d.queryPermission) return 'none'; let p = await d.queryPermission({ mode: 'readwrite' }); if (p !== 'granted' && ask) p = await d.requestPermission({ mode: 'readwrite' }); return p; },
+  async choose() { try { const d = await window.showDirectoryPicker({ id: 'rankrank', mode: 'readwrite', startIn: 'documents' }); await PDFStore.put('backupDir', d, 'meta'); this._dir = d; S.bk = Object.assign(S.bk || {}, { folder: d.name }); await this.run('manual', true); toast('Backups will be saved to “' + d.name + '”'); return true; } catch (e) { if (e.name !== 'AbortError') toast('Couldn’t use that folder — try another one'); return false; } },
+  fingerprint() { return JSON.stringify([S.stats, S.marked, S.hl, S.days, S.xp, S.sessions.length, (S.userPdfs || []).map(u => u.id), S.settings, S.awards]).length + ':' + S.xp + ':' + Object.keys(S.stats).length + ':' + Object.keys(S.marked).length + ':' + (S.sessions.at(-1)?.at || 0) + ':' + Object.values(S.stats).reduce((a, x) => a + x.n, 0) + ':' + Object.values(S.hl).reduce((a, x) => a + x.length, 0); },
+  changed() { return (S.bk || {}).fp !== this.fingerprint(); },
+  async snapshot() { const decks = []; for (const u of S.userPdfs || []) { const raw = await PDFStore.get('deck/' + u.id, 'meta'); if (raw) decks.push(raw); } return JSON.stringify({ app: 'Rank Rank', kind: 'backup', v: 1, at: new Date().toISOString(), data: S, decks }); },
+  async run(reason, force) {
+    if (this.busy) return false; this.busy = true;
+    try {
+      const d = await this.dir(); if (!d) return false;
+      if ((await this.perm(false)) !== 'granted') { S.bk = Object.assign(S.bk || {}, { paused: true }); return false; }
+      if (!force && !this.changed()) return false;
+      const fp = this.fingerprint(); const json = await this.snapshot();
+      const fh = await d.getFileHandle('rank-rank-backup.json', { create: true }); const w = await fh.createWritable(); await w.write(json); await w.close();
+      if ((S.userPdfs || []).length) { const sub = await d.getDirectoryHandle('uploaded-pdfs', { create: true }); for (const u of S.userPdfs) { const name = u.name.replace(/[\\/:*?"<>|]/g, '_').slice(0, 80) + ' [' + u.id + '].pdf'; try { await sub.getFileHandle(name); } catch (e) { const bl = await PDFStore.get('user/' + u.id); if (bl) { const h2 = await sub.getFileHandle(name, { create: true }); const w2 = await h2.createWritable(); await w2.write(bl); await w2.close(); } } } }
+      S.bk = Object.assign(S.bk || {}, { at: Date.now(), fp, paused: false, folder: d.name, why: reason }); saveNow(); return true;
+    } catch (e) { console.warn('Backup failed', e); return false; } finally { this.busy = false; }
+  },
+  sinceH() { return (Date.now() - ((S.bk || {}).at || 0)) / 3600e3; },
+  /* Policy: write only when something changed — on open if 6 h have passed, on leaving/finishing if 30 min have passed, and every 6 h while open. */
+  maybe(reason) { if (!this.changed()) return; const h = this.sinceH(); if ((reason === 'open' || reason === 'timer') && h < 6) return; if ((reason === 'hide' || reason === 'finish') && h < .5) return; this.run(reason); },
+  download() { this.snapshot().then(j => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([j], { type: 'application/json' })); a.download = 'rank-rank-backup-' + todayKey() + '.json'; a.click(); S.bk = Object.assign(S.bk || {}, { dl: Date.now(), fpdl: this.fingerprint() }); saveNow(); }); },
+  async restore(file) {
+    const j = JSON.parse(await file.text()); const data = j && j.kind === 'backup' ? j.data : j; if (!data || typeof data !== 'object' || !data.stats) throw new Error('not a backup');
+    if (!confirm('Replace the progress on this device with the backup from ' + (j.at ? new Date(j.at).toLocaleString() : 'this file') + '?')) return;
+    for (const raw of j.decks || []) { try { const dk = JSON.parse(raw); await PDFStore.put('deck/' + dk.id, raw, 'meta'); } catch (e) {} }
+    const keepBk = S.bk; S = Object.assign(structuredClone(DEFAULT), data); S.settings = Object.assign(structuredClone(DEFAULT.settings), data.settings || {}); S.bk = Object.assign({}, data.bk || {}, keepBk ? { folder: keepBk.folder, at: keepBk.at } : {}); saveNow();
+    toast('Backup restored'); setTimeout(() => location.reload(), 600);
+  },
+  async banner() {
+    if (!Object.keys(S.stats).length) return null;
+    if (await this.dir()) { if ((await this.perm(false)) === 'granted') return null; const c = h(`<button class="card bkcard" type="button">${I.upload}<div><b>Backups are paused</b><span>Tap to let Rank Rank keep saving to “${esc(S.bk?.folder || 'your folder')}”.</span></div></button>`); c.onclick = async () => { if ((await this.perm(true)) === 'granted') { await this.run('resume', true); toast('Backups resumed'); c.remove(); } }; return c; }
+    if (this.can()) { if (S.bk?.skip && Date.now() - S.bk.skip < 7 * 864e5) return null; const c = h(`<div class="card bkcard">${I.upload}<div><b>Keep your progress safe</b><span>Pick a folder on this device and Rank Rank saves a backup there automatically.</span><div class="btnrow" style="margin-top:10px"><button class="btn gray"><span>Later</span></button><button class="btn primary"><span>Choose folder</span></button></div></div></div>`); c.querySelectorAll('.btn')[0].onclick = () => { S.bk = Object.assign(S.bk || {}, { skip: Date.now() }); save(); c.remove(); }; c.querySelectorAll('.btn')[1].onclick = async () => { if (await this.choose()) c.remove(); }; return c; }
+    if ((S.bk?.fpdl !== this.fingerprint()) && Date.now() - (S.bk?.dl || 0) > 6 * 3600e3) { const c = h(`<button class="card bkcard" type="button">${I.upload}<div><b>Back up your progress</b><span>Download a backup file — this browser can’t save to a folder automatically.</span></div></button>`); c.onclick = () => { this.download(); c.remove(); toast('Backup downloaded'); }; return c; }
+    return null;
+  }
+};
 /* ---------- Welcome & boot ---------- */
 function welcome() {
   if (S.welcomed) return;
@@ -1305,12 +1370,16 @@ async function deepLink() {
 }
 addEventListener('hashchange', () => { if (location.hash.startsWith('#go/')) deepLink(); });
 (async () => {
+  if (!localStorage.getItem(KEY) && !localStorage.getItem('clauseclause.v1')) { const m = await PDFStore.get('S', 'meta'); if (m) { try { const d = JSON.parse(m); if (d && d.stats && Object.keys(d.stats).length) { localStorage.setItem(KEY, m); location.reload(); return; } } catch (e) {} } }
   if (!(await deepLink())) route();
   splash(); setTimeout(welcome, 2500);
   decksReady.then(() => { if ((S.userPdfs || []).length && /^#(practice|study|cheat)/.test(location.hash)) route(); });
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) { navigator.serviceWorker.register('sw.js').catch(() => {}); navigator.serviceWorker.addEventListener?.('message', e => { if (e.data?.url) location.href = e.data.url; }); }
   Remind.schedule(); Remind.syncMeta();
-  window.__rr = { Session, Viewer, Cheat, BYID };
-  document.addEventListener('visibilitychange', () => { if (document.hidden) Remind.syncMeta(); });
+  try { navigator.storage?.persist?.(); } catch (e) {}
+  setTimeout(() => Backup.maybe('open'), 4000); setInterval(() => Backup.maybe('timer'), 30 * 60e3);
+  addEventListener('pagehide', saveNow);
+  window.__rr = { Session, Viewer, Cheat, BYID, get S() { return S; }, saveNow, Backup };
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { saveNow(); Remind.syncMeta(); Backup.maybe('hide'); } });
 })();
 })();

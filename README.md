@@ -13,9 +13,9 @@ Daily practice for Corporate & Economic Laws: MCQs, case questions, written answ
 ## What’s inside
 | Path | What it is |
 |---|---|
-| `data/bank.js` | 522 questions (374 MCQs incl. June 2026 paper, 148 written) with page links, corrections and law updates |
+| `data/bank.js` | 818 questions (374 MCQs incl. June 2026 paper, 444 written — BCCA Q&A, ICMAI MQP model answers, Disha Lohana question banks) with page links, corrections and law updates |
 | `data/cheat.js` | Unit-wise key values (425 lines quoted from the Concept Book), 18 “often confused” pairs, loaded only when the Cheat sheet opens |
-| `pdfs/` | The 8 course PDFs — keep file names unchanged |
+| `pdfs/` | 37 PDFs (largest 11.7 MB, all under GitHub’s 25 MB browser-upload limit) — keep file names unchanged |
 | `icons/` | App icon, maskable icon, notification badge |
 
 App code + data ≈ 1 MB; PDFs load only when opened. Works offline after the first visit.
@@ -25,3 +25,9 @@ App code + data ≈ 1 MB; PDFs load only when opened. Works offline after the fi
 - **Device notifications:** on Android and desktop Chrome/Edge when the app is installed. iPhone shows web notifications only for Home Screen apps and only via a push server, so use the calendar reminder there.
 
 Progress, highlights, starred questions and uploaded PDFs stay in each user’s browser. Settings → Export progress moves them to another device.
+
+## Backups (no data loss)
+- Progress is saved instantly in the browser and mirrored to a second internal store; if one is wiped, the app restores from the other on next open.
+- **Settings → Backup & restore → Choose a backup folder** (Chrome/Edge on desktop and Android): one file, `rank-rank-backup.json`, plus an `uploaded-pdfs` folder. It is written only when something changed — on opening if 6 hours have passed, on leaving the app or finishing a session if 30 minutes have passed, and every 6 hours while open.
+- Safari / iPhone can’t write to folders: use **Download backup file**; Today reminds you when one is due.
+- **Restore from a backup file** also accepts old progress exports.
